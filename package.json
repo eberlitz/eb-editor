@@ -7,18 +7,24 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "webpack",
     "start": "webpack-dev-server --open",
-    "watch": "webpack --watch"
+    "watch": "webpack --watch",
+    "server": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "monaco-editor": "^0.17.0"
+    "@convergence/color-assigner": "^0.3.0",
+    "monaco-editor": "^0.17.0",
+    "peer": "^0.2.10",
+    "peerjs": "^1.0.0"
   },
   "devDependencies": {
+    "@convergencelabs/monaco-collab-ext": "^0.1.1",
     "clean-webpack-plugin": "^2.0.2",
     "css-loader": "^2.1.1",
     "dart-sass": "^1.20.1",
+    "express": "^4.17.0",
     "html-webpack-plugin": "^3.2.0",
     "mini-css-extract-plugin": "^0.6.0",
     "sass-loader": "^7.1.0",
@@ -27,6 +33,7 @@
     "typescript": "^3.4.5",
     "webpack": "^4.31.0",
     "webpack-cli": "^3.3.2",
+    "webpack-dev-middleware": "^3.7.0",
     "webpack-dev-server": "^3.4.1"
   }
 }

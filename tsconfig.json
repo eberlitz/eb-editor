@@ -8,6 +8,9 @@
         "allowJs": true,
         "types": [
             "monaco-editor"
+        ],
+        "lib": [
+            "dom"
         ]
     }
 }
