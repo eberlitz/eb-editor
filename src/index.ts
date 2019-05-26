@@ -8,14 +8,6 @@ import { RemoteCursor } from "@convergencelabs/monaco-collab-ext/typings/RemoteC
 import { RemoteSelection } from "@convergencelabs/monaco-collab-ext/typings/RemoteSelection";
 import { createEditor } from "./monaco";
 import { getLocationHash, updateLocationHash } from './helpers';
-/*
-- [ ] Dispose Cursor and Selection when the remote peer disconnects
-- [ ] Network redistribution
-- [ ] Update URL when originating peer leaves network. 
-    - 1 node create the doc, another 2 connect to it, the original disconnect. the 2 remaingin must be connected and the url updated;
-- [ ] When broadcasting peer originating operations, we can do it only when the target is different of the source. This will save bandwidth.
-- [ ] Refactor code and write tests
-*/
 
 const editor = createEditor()
 
