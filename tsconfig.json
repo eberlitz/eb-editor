@@ -7,10 +7,13 @@
         "target": "es6",
         "allowJs": true,
         "types": [
-            "monaco-editor"
+            "monaco-editor",
+            "peerjs"
         ],
+        "noLib": false,
         "lib": [
-            "dom"
+            "dom",
+            "es2016"
         ]
     }
 }
