@@ -28,46 +28,59 @@ export interface LoadOperation {
 export interface DataOperation {
     type: OperationType.DATA;
     data: any;
+    net: string[];
 }
 
-export interface AddToNetworkOperation {
+export interface RelayableOperation {
+    uuid: string;
+}
+
+export interface AddToNetworkOperation extends RelayableOperation {
     type: OperationType.ADD_TO_NETWORK;
     peer: string;
 }
 
-export interface AppliableOperation {
-    uuid: string;
-}
-
-export interface InsertTextOperation extends AppliableOperation {
+export interface InsertTextOperation extends RelayableOperation {
     type: OperationType.INSERT_TEXT;
     index: number;
     text: string;
 }
 
-export interface DeleteTextOperation extends AppliableOperation {
+export interface DeleteTextOperation extends RelayableOperation {
     type: OperationType.DELETE_TEXT;
     index: number;
     length: number;
 }
 
-export interface UpdateCursorOperation extends AppliableOperation {
+export interface UpdateCursorOperation extends RelayableOperation {
     type: OperationType.UPDATE_CURSOR_OFFSET;
     peer: string;
     offset: number;
 }
 
-export interface UpdateSelectionOperation extends AppliableOperation {
+export interface UpdateSelectionOperation extends RelayableOperation {
     type: OperationType.UPDATE_SELECTION;
     peer: string;
     value?: { start: number, end: number };
 }
 
-export type Operation = LoadOperation | DataOperation
+export interface MaybeRelayableOperation {
+    uuid?: string;
+}
+
+export type Operation = MaybeRelayableOperation & (LoadOperation | DataOperation
     | AddToNetworkOperation | InsertTextOperation | DeleteTextOperation
-    | UpdateCursorOperation | UpdateSelectionOperation;
+    | UpdateCursorOperation | UpdateSelectionOperation);
 
+function getRelayOpUUID(op: Operation | Operation[]): string | undefined {
+    const ops = Array.isArray(op) ? op : [op];
+    const opWithUuid = ops.find((a) => !!a.uuid);
+    return opWithUuid && opWithUuid.uuid;
+}
 
+function isRelayOp(op: Operation | Operation[]) {
+    return !!getRelayOpUUID(op);
+}
 
 export class Broadcast {
     onInsertText?: (index: number, value: string) => void;
@@ -82,7 +95,6 @@ export class Broadcast {
     private appliedOps: string[] = [];
     private incomming: Peer.DataConnection[] = [];
     private outgoing: Peer.DataConnection[] = [];
-    private network: { peer: string }[] = []
     constructor(
         private targetID: string,
         private peer: Peer,
@@ -97,10 +109,10 @@ export class Broadcast {
 
     private onOpen() {
         this.peer.on('open', (id) => {
-            console.log('My peer ID is: ' + id);
+            console.log('Peer ID: ' + id);
+            this.onPeerConnection();
             if (!this.targetID) {
                 updateLocationHash({ id });
-                this.onPeerConnection();
             } else {
                 this.connectToTarget(this.targetID);
             }
@@ -113,14 +125,15 @@ export class Broadcast {
      * @param {string} targetPeerId
      * @memberof Broadcast
      */
-    private connectToTarget(targetPeerId: string) {
+    private connectToTarget(targetPeerId: string, loadInitialData = true) {
+        // console.log(`connecting to ${targetPeerId} ...`);
         const conn = peer.connect(targetPeerId);
         conn.on('open', () => {
-            console.log(`connected to ${targetPeerId}`);
+            console.log(`==> connected to ${targetPeerId}`);
             this.addOutgoing(conn);
-            conn.send({
-                type: OperationType.LOAD
-            })
+            if (loadInitialData) {
+                conn.send({ type: OperationType.LOAD });
+            }
             this.onData(conn);
             this.onConnClose(conn);
         });
@@ -128,7 +141,7 @@ export class Broadcast {
 
     private onPeerConnection() {
         peer.on('connection', (conn) => {
-            console.log(`receive connection from ${conn.peer}`);
+            console.log(`<== receive connection from ${conn.peer}`);
             this.addIncomming(conn);
             conn.on('open', () => {
                 this.onData(conn);
@@ -137,19 +150,21 @@ export class Broadcast {
         });
     }
 
+    private get network() {
+        return this.incomming.concat(this.outgoing).map(a => a.peer);
+    }
+
     private addToNetwork(peer: string) {
-        if (!!peer && !this.network.find(a => a.peer === peer)) {
-            this.network.push({ peer });
-            this.broadcast({
-                type: OperationType.ADD_TO_NETWORK,
-                peer
-            });
-        }
+        console.log(`broadcasting ADD_TO_NETWORK:[${peer}]`)
+        this.broadcast({
+            type: OperationType.ADD_TO_NETWORK,
+            uuid: this.getOperationID(),
+            peer,
+        });
     }
     broadcast(op: Operation | Operation[]) {
-
-        const ops = Array.isArray(op) ? op : [op];
-        ops.forEach(a => this.applyOnce(a as AppliableOperation, () => { }))
+        // Just mark operations as applied to save bandwidth
+        this.applyOpsOnce(op, () => { });
 
         this.outgoing.forEach(c => c.send(op));
         this.incomming.forEach(c => c.send(op));
@@ -158,8 +173,8 @@ export class Broadcast {
     private addIncomming(conn: Peer.DataConnection) {
         if (!!conn && !this.incomming.find(a => a.peer === conn.peer)) {
             this.incomming.push(conn);
+            this.addToNetwork(conn.peer);
         }
-        this.addToNetwork(conn.peer)
         this.logInfo();
     }
 
@@ -167,7 +182,6 @@ export class Broadcast {
         if (!!conn && !this.outgoing.find(a => a.peer === conn.peer)) {
             this.outgoing.push(conn);
         }
-        this.addToNetwork(conn.peer)
         this.logInfo();
     }
 
@@ -186,58 +200,66 @@ export class Broadcast {
     private onData(conn: Peer.DataConnection) {
         // Receive messages
         conn.on('data', (d: Operation | Operation[]) => {
-            console.log(`Received from ${conn.peer}`, d);
-            var ops = Array.isArray(d) ? d : [d];
+            this.applyOpsOnce(d, () => {
+                isRelayOp(d) && this.broadcast(d);
+                // Relay data to peers
+                // console.log(`Received from ${conn.peer}`, JSON.stringify(d, null, 4));
+                var ops = Array.isArray(d) ? d : [d];
 
-            ops.forEach(data => {
-                switch (data.type) {
-                    case OperationType.LOAD:
-                        conn.send({
-                            type: OperationType.DATA,
-                            data: this.getData()
-                        } as DataOperation);
-                        break;
-                    case OperationType.DATA:
-                        this.setData(data.data);
-                        break;
-                    case OperationType.ADD_TO_NETWORK:
-                        this.addToNetwork(data.peer);
-                        break;
-                    case OperationType.INSERT_TEXT:
-                        this.applyOnce(data, () => {
+                ops.forEach(data => {
+                    switch (data.type) {
+                        case OperationType.LOAD:
+                            conn.send({
+                                type: OperationType.DATA,
+                                data: this.getData(),
+                                net: this.network
+                            } as DataOperation);
+                            break;
+                        case OperationType.DATA:
+                            this.setData(data.data);
+                            data.net.filter(a => a !== this.peer.id)
+                                .forEach(p => this.connectToTarget(p, false));
+                            break;
+                        case OperationType.ADD_TO_NETWORK:
+                            data.peer !== this.peer.id
+                                && !this.network.find(a => a == data.peer)
+                                && this.connectToTarget(data.peer, false);
+                            break;
+                        case OperationType.INSERT_TEXT:
                             this.onInsertText && this.onInsertText(data.index, data.text);
-                        });
-                        break;
-                    case OperationType.DELETE_TEXT:
-                        this.applyOnce(data, () => {
+                            break;
+                        case OperationType.DELETE_TEXT:
                             this.onDeleteText && this.onDeleteText(data.index, data.length)
-                        });
-                        break;
-                    case OperationType.UPDATE_CURSOR_OFFSET:
-                        this.applyOnce(data, () => {
+                            break;
+                        case OperationType.UPDATE_CURSOR_OFFSET:
                             this.onUpdateCursor && this.onUpdateCursor(data.peer, data.offset)
-                        });
-                        break;
-                    case OperationType.UPDATE_SELECTION:
-                        this.applyOnce(data, () => {
+                            break;
+                        case OperationType.UPDATE_SELECTION:
                             this.onUpdateSelection && this.onUpdateSelection(data.peer, data.value)
-                        });
-                        break;
-                    default:
-                        console.log(`Unknow operation received from ${conn.peer}`, data);
-                        break;
-                }
+                            break;
+                        default:
+                            console.warn(`Unknow operation received from ${conn.peer}`, data);
+                            break;
+                    }
+                });
             });
         });
     }
-    private applyOnce(data: AppliableOperation, applyFn: () => void) {
-        if (!data.uuid || this.appliedOps.indexOf(data.uuid) !== -1) {
+
+
+
+    private applyOpsOnce(op: Operation | Operation[], applyFn: () => void) {
+        const opUUID = getRelayOpUUID(op);
+        if (!opUUID) {
+            return applyFn();
+        }
+        if (this.appliedOps.indexOf(opUUID) !== -1) {
             return;
         }
         if (this.appliedOps.length === this.MAX_APPLIEDOPS_BUFFER_SIZE) {
             this.appliedOps.shift();
         }
-        this.appliedOps.push(data.uuid);
+        this.appliedOps.push(opUUID);
         applyFn();
     }
 
@@ -250,7 +272,6 @@ export class Broadcast {
     private logInfo() {
         console.debug(`----------------------------`);
         console.debug(`peerid:${this.peer.id}`);
-        console.debug(`network:[${this.network.map(a => a.peer)}]`);
         console.debug(`inn:[${this.incomming.map(a => a.peer)}]`);
         console.debug(`out:[${this.outgoing.map(a => a.peer)}]`);
         console.debug(`----------------------------`);
@@ -292,6 +313,7 @@ broadcast.getData = () => updateDataText();
 broadcast.setData = (d) => {
     data = Object.assign(data || {}, d);
     editor.getModel().setValue(data.text);
+    // updateLocationHash({ id: peer.id })
 };
 broadcast.onInsertText = (index: number, value: string) => contentManager.insert(index, value);
 broadcast.onDeleteText = (index: number, length: number) => contentManager.delete(index, length);
@@ -342,7 +364,6 @@ editor.onDidChangeCursorPosition(e => {
     // setLocalCursor
     const position = editor.getPosition();
     const offset = editor.getModel().getOffsetAt(position);
-    console.log('offset', offset);
     broadcast.broadcast({
         uuid: broadcast.getOperationID(),
         type: OperationType.UPDATE_CURSOR_OFFSET,
@@ -385,7 +406,6 @@ editor.onDidChangeCursorSelection(e => {
         const start = editor.getModel().getOffsetAt(selection.getStartPosition());
         const end = editor.getModel().getOffsetAt(selection.getEndPosition());
         // this._selectionReference.set({ start, end });
-        console.log('selection', { start, end });
 
         lastSelection = {
             uuid: broadcast.getOperationID(),
@@ -397,7 +417,6 @@ editor.onDidChangeCursorSelection(e => {
 
     } else if (!!lastSelection && !!lastSelection.value) {
         // this._selectionReference.clear();
-        console.log('selection', 'clear');
         lastSelection = {
             uuid: broadcast.getOperationID(),
             type: OperationType.UPDATE_SELECTION,
