@@ -267,6 +267,11 @@ export class Broadcast {
     private onConnClose(conn: Peer.DataConnection) {
         conn.on('close', () => {
             this.removeConnection(conn);
+            if (conn.peer === this.targetID) {
+                const candidate = this.outgoing[0];
+                const id = candidate && candidate.peer || this.peer.id;
+                updateLocationHash({ id })
+            }
         });
     }
     private logInfo() {
