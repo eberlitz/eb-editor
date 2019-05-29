@@ -130,7 +130,6 @@ broadcast.onPeerDisconnected = (peerId: string) => {
 
 function sendSelection(value: { start: number, end: number } | null) {
     broadcast.broadcast({
-        uuid: broadcast.getOperationID(),
         type: OperationType.UPDATE_SELECTION,
         peer: peer.id,
         value: value
