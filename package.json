@@ -21,7 +21,6 @@
   },
   "devDependencies": {
     "@convergencelabs/monaco-collab-ext": "^0.1.1",
-    "@types/uuid": "^3.4.4",
     "clean-webpack-plugin": "^2.0.2",
     "css-loader": "^2.1.1",
     "dart-sass": "^1.20.1",

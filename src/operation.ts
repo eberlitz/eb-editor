@@ -19,10 +19,6 @@ export interface DataOperation {
     net: string[];
 }
 
-export interface RelayableOperation {
-    uuid: string;
-}
-
 export interface AddToNetworkOperation {
     type: OperationType.ADD_TO_NETWORK;
     peer: string;
@@ -52,22 +48,6 @@ export interface UpdateSelectionOperation {
     value?: { start: number, end: number };
 }
 
-export interface MaybeRelayableOperation {
-    uuid?: string;
-}
-
-export type Operation = MaybeRelayableOperation & (LoadOperation | DataOperation
+export type Operation = LoadOperation | DataOperation
     | AddToNetworkOperation | InsertTextOperation | DeleteTextOperation
-    | UpdateCursorOperation | UpdateSelectionOperation);
-
-
-
-export function getRelayOpUUID(op: Operation | Operation[]): string | undefined {
-    const ops = Array.isArray(op) ? op : [op];
-    const opWithUuid = ops.find((a) => !!a.uuid);
-    return opWithUuid && opWithUuid.uuid;
-}
-
-export function isRelayOp(op: Operation | Operation[]) {
-    return !!getRelayOpUUID(op);
-}
+    | UpdateCursorOperation | UpdateSelectionOperation;
