@@ -13,6 +13,6 @@ TODO:
 - [x] Syncronize cursor between multiple peers
 - [x] Update URL when originating peer leaves network. 
     - 1 node create the doc, another 2 connect to it, the original disconnect. the 2 remaingin must be connected and the url updated;
-- [ ] Dispose Cursor and Selection when the remote peer disconnects
+- [x] Dispose Cursor and Selection when the remote peer disconnects
 - [ ] Refactor code and write tests
 - [ ] Change peer to a connection broker based on "filepaths" instead of peerIds

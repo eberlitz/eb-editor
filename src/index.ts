@@ -94,6 +94,7 @@ export class Broadcast {
     private opcounter = 0;
     private appliedOps: string[] = [];
     private network: Peer.DataConnection[] = [];
+    onPeerDisconnected: (peerId: string) => void;
     constructor(
         private targetID: string,
         private peer: Peer,
@@ -253,6 +254,7 @@ export class Broadcast {
                 const id = candidate && candidate.peer || this.peer.id;
                 updateLocationHash({ id })
             }
+            this.onPeerDisconnected && this.onPeerDisconnected(conn.peer);
         });
     }
     private logInfo() {
@@ -300,7 +302,15 @@ broadcast.setData = (d) => {
 broadcast.onInsertText = (index: number, value: string) => contentManager.insert(index, value);
 broadcast.onDeleteText = (index: number, length: number) => contentManager.delete(index, length);
 
-
+const remoteCursorManager = new RemoteCursorManager({
+    editor: editor as any,
+    tooltips: true,
+    tooltipDuration: 2
+});
+const _remoteSelectionManager = new RemoteSelectionManager({ editor: editor as any });
+const remoteSelections = new Map<string, RemoteSelection>();
+const remoteCursors = new Map<string, RemoteCursor>();
+const _colorAssigner = new ColorAssigner();
 
 const contentManager = new EditorContentManager({
     editor: editor as any,
@@ -332,11 +342,7 @@ const contentManager = new EditorContentManager({
 });
 
 
-const remoteCursorManager = new RemoteCursorManager({
-    editor: editor as any,
-    tooltips: true,
-    tooltipDuration: 2
-});
+
 
 editor.onDidChangeCursorPosition(e => {
     // setLocalCursor
@@ -349,8 +355,7 @@ editor.onDidChangeCursorPosition(e => {
     })
 });
 
-const remoteCursors = new Map<string, RemoteCursor>();
-const _colorAssigner = new ColorAssigner();
+
 broadcast.onUpdateCursor = (peerId, offset) => {
     // ignore local cursor
     if (peer.id === peerId) {
@@ -370,9 +375,31 @@ broadcast.onUpdateCursor = (peerId, offset) => {
         remoteCursor.dispose();
     }
 }
+function removeRemoteCursor(peerId: string) {
+    let remoteCursor = remoteCursors.get(peerId);
+    if (remoteCursor) {
+        remoteCursors.delete(peerId);
+        remoteCursor.dispose();
+    }
+}
+
+
+broadcast.onPeerDisconnected = (peerId: string) => {
+    console.log(`Peer disconnected!`, peerId);
+    removeRemoteSelection(peerId);
+    removeRemoteCursor(peerId);
+};
 
 
 
+function sendSelection(value: { start: number, end: number } | null) {
+    broadcast.broadcast({
+        uuid: broadcast.getOperationID(),
+        type: OperationType.UPDATE_SELECTION,
+        peer: peer.id,
+        value: value
+    });
+}
 
 
 let lastSelection: any = undefined;
@@ -384,31 +411,17 @@ editor.onDidChangeCursorSelection(e => {
         const end = editor.getModel().getOffsetAt(selection.getEndPosition());
         // this._selectionReference.set({ start, end });
 
-        lastSelection = {
-            uuid: broadcast.getOperationID(),
-            type: OperationType.UPDATE_SELECTION,
-            peer: peer.id,
-            value: { start, end }
-        };
-        broadcast.broadcast(lastSelection);
+        lastSelection = { start, end };
+        sendSelection(lastSelection);
 
-    } else if (!!lastSelection && !!lastSelection.value) {
+    } else if (!!lastSelection) {
         // this._selectionReference.clear();
-        lastSelection = {
-            uuid: broadcast.getOperationID(),
-            type: OperationType.UPDATE_SELECTION,
-            peer: peer.id,
-            value: null
-        };
-        broadcast.broadcast(lastSelection);
+        lastSelection = null;
+        sendSelection(lastSelection);
     }
 });
 
-const _remoteSelectionManager = new RemoteSelectionManager({ editor: editor as any });
-const remoteSelections = new Map<string, RemoteSelection>();
-// TODO: Dispose and remove from map when the peer close connection.
-// remoteSelections.delete(peerId);
-// remoteSelection.dispose();
+
 broadcast.onUpdateSelection = (peerId, value) => {
     // ignore local cursor
     if (peer.id === peerId) {
@@ -425,5 +438,13 @@ broadcast.onUpdateSelection = (peerId, value) => {
         remoteSelection.setOffsets(value.start, value.end);
     } else if (!!remoteSelection) {
         remoteSelection.hide();
+    }
+}
+
+function removeRemoteSelection(peerId: string) {
+    let remoteSelection = remoteSelections.get(peerId);
+    if (remoteSelection) {
+        remoteSelections.delete(peerId);
+        remoteSelection.dispose();
     }
 }
