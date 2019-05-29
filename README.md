@@ -2,7 +2,7 @@
 
 Secure P2P Collaborative Markdown Editor in the Browser using WebRTC and Monaco Editor.
 
-Still in development.
+Still in development. For now, you can run it with `npm run server`.
 
 TODO:
 
@@ -14,6 +14,5 @@ TODO:
 - [x] Update URL when originating peer leaves network. 
     - 1 node create the doc, another 2 connect to it, the original disconnect. the 2 remaingin must be connected and the url updated;
 - [ ] Dispose Cursor and Selection when the remote peer disconnects
-- [ ] Network redistribution
-- [ ] When broadcasting peer originating operations, we can do it only when the target is different of the source. This will save bandwidth.
 - [ ] Refactor code and write tests
+- [ ] Change peer to a connection broker based on "filepaths" instead of peerIds
