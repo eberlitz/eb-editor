@@ -35,30 +35,30 @@ export interface RelayableOperation {
     uuid: string;
 }
 
-export interface AddToNetworkOperation extends RelayableOperation {
+export interface AddToNetworkOperation {
     type: OperationType.ADD_TO_NETWORK;
     peer: string;
 }
 
-export interface InsertTextOperation extends RelayableOperation {
+export interface InsertTextOperation {
     type: OperationType.INSERT_TEXT;
     index: number;
     text: string;
 }
 
-export interface DeleteTextOperation extends RelayableOperation {
+export interface DeleteTextOperation {
     type: OperationType.DELETE_TEXT;
     index: number;
     length: number;
 }
 
-export interface UpdateCursorOperation extends RelayableOperation {
+export interface UpdateCursorOperation {
     type: OperationType.UPDATE_CURSOR_OFFSET;
     peer: string;
     offset: number;
 }
 
-export interface UpdateSelectionOperation extends RelayableOperation {
+export interface UpdateSelectionOperation {
     type: OperationType.UPDATE_SELECTION;
     peer: string;
     value?: { start: number, end: number };
@@ -93,8 +93,7 @@ export class Broadcast {
     private siteID = UUID();
     private opcounter = 0;
     private appliedOps: string[] = [];
-    private incomming: Peer.DataConnection[] = [];
-    private outgoing: Peer.DataConnection[] = [];
+    private network: Peer.DataConnection[] = [];
     constructor(
         private targetID: string,
         private peer: Peer,
@@ -109,7 +108,7 @@ export class Broadcast {
 
     private onOpen() {
         this.peer.on('open', (id) => {
-            console.log('Peer ID: ' + id);
+            console.info('Peer ID: ' + id);
             this.onPeerConnection();
             if (!this.targetID) {
                 updateLocationHash({ id });
@@ -130,7 +129,7 @@ export class Broadcast {
         const conn = peer.connect(targetPeerId);
         conn.on('open', () => {
             console.log(`==> connected to ${targetPeerId}`);
-            this.addOutgoing(conn);
+            this.addToNetwork(conn, false);
             if (loadInitialData) {
                 conn.send({ type: OperationType.LOAD });
             }
@@ -142,7 +141,7 @@ export class Broadcast {
     private onPeerConnection() {
         peer.on('connection', (conn) => {
             console.log(`<== receive connection from ${conn.peer}`);
-            this.addIncomming(conn);
+            this.addToNetwork(conn, true);
             conn.on('open', () => {
                 this.onData(conn);
                 this.onConnClose(conn);
@@ -150,49 +149,31 @@ export class Broadcast {
         });
     }
 
-    private get network() {
-        return this.incomming.concat(this.outgoing).map(a => a.peer);
-    }
-
-    private addToNetwork(peer: string) {
-        console.log(`broadcasting ADD_TO_NETWORK:[${peer}]`)
-        this.broadcast({
-            type: OperationType.ADD_TO_NETWORK,
-            uuid: this.getOperationID(),
-            peer,
-        });
-    }
     broadcast(op: Operation | Operation[]) {
         // Just mark operations as applied to save bandwidth
         this.applyOpsOnce(op, () => { });
 
-        this.outgoing.forEach(c => c.send(op));
-        this.incomming.forEach(c => c.send(op));
+        this.network.forEach(c => c.send(op));
     }
 
-    private addIncomming(conn: Peer.DataConnection) {
-        if (!!conn && !this.incomming.find(a => a.peer === conn.peer)) {
-            this.incomming.push(conn);
-            this.addToNetwork(conn.peer);
+    private addToNetwork(conn: Peer.DataConnection, broadcast: boolean) {
+        if (!!conn && !this.network.find(a => a.peer === conn.peer)) {
+            this.network.push(conn);
+            if (broadcast) {
+                console.log(`broadcasting ADD_TO_NETWORK:[${peer}]`)
+                this.broadcast({
+                    type: OperationType.ADD_TO_NETWORK,
+                    peer: conn.peer,
+                });
+            }
+            this.logInfo();
         }
-        this.logInfo();
-    }
-
-    private addOutgoing(conn: Peer.DataConnection) {
-        if (!!conn && !this.outgoing.find(a => a.peer === conn.peer)) {
-            this.outgoing.push(conn);
-        }
-        this.logInfo();
     }
 
     private removeConnection(conn: Peer.DataConnection) {
-        let idx = this.incomming.indexOf(conn);
+        let idx = this.network.indexOf(conn);
         if (idx !== -1) {
-            this.incomming.splice(idx, 1);
-        }
-        idx = this.outgoing.indexOf(conn);
-        if (idx !== -1) {
-            this.outgoing.splice(idx, 1);
+            this.network.splice(idx, 1);
         }
         this.logInfo();
     }
@@ -212,7 +193,7 @@ export class Broadcast {
                             conn.send({
                                 type: OperationType.DATA,
                                 data: this.getData(),
-                                net: this.network
+                                net: this.network.map(a => a.peer)
                             } as DataOperation);
                             break;
                         case OperationType.DATA:
@@ -222,7 +203,7 @@ export class Broadcast {
                             break;
                         case OperationType.ADD_TO_NETWORK:
                             data.peer !== this.peer.id
-                                && !this.network.find(a => a == data.peer)
+                                && !this.network.find(a => a.peer == data.peer)
                                 && this.connectToTarget(data.peer, false);
                             break;
                         case OperationType.INSERT_TEXT:
@@ -268,18 +249,14 @@ export class Broadcast {
         conn.on('close', () => {
             this.removeConnection(conn);
             if (conn.peer === this.targetID) {
-                const candidate = this.outgoing[0];
+                const candidate = this.network[0];
                 const id = candidate && candidate.peer || this.peer.id;
                 updateLocationHash({ id })
             }
         });
     }
     private logInfo() {
-        console.debug(`----------------------------`);
-        console.debug(`peerid:${this.peer.id}`);
-        console.debug(`inn:[${this.incomming.map(a => a.peer)}]`);
-        console.debug(`out:[${this.outgoing.map(a => a.peer)}]`);
-        console.debug(`----------------------------`);
+        console.log(`network:[${this.network.map(a => a.peer)}]`);
     }
 }
 
@@ -329,7 +306,6 @@ const contentManager = new EditorContentManager({
     editor: editor as any,
     onInsert(index: any, text: any) {
         broadcast.broadcast({
-            uuid: broadcast.getOperationID(),
             type: OperationType.INSERT_TEXT,
             index,
             text
@@ -337,12 +313,10 @@ const contentManager = new EditorContentManager({
     },
     onReplace(index: any, length: any, text: any) {
         broadcast.broadcast([{
-            uuid: broadcast.getOperationID(),
             type: OperationType.DELETE_TEXT,
             index,
             length
         }, {
-            uuid: broadcast.getOperationID(),
             type: OperationType.INSERT_TEXT,
             index,
             text
@@ -350,7 +324,6 @@ const contentManager = new EditorContentManager({
     },
     onDelete(index: any, length: any) {
         broadcast.broadcast({
-            uuid: broadcast.getOperationID(),
             type: OperationType.DELETE_TEXT,
             index,
             length
@@ -370,7 +343,6 @@ editor.onDidChangeCursorPosition(e => {
     const position = editor.getPosition();
     const offset = editor.getModel().getOffsetAt(position);
     broadcast.broadcast({
-        uuid: broadcast.getOperationID(),
         type: OperationType.UPDATE_CURSOR_OFFSET,
         offset,
         peer: peer.id
