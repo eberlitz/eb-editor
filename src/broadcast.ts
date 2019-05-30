@@ -1,5 +1,4 @@
 import * as Peer from 'peerjs';
-import { updateLocationHash } from './helpers';
 import { OperationType, Operation, DataOperation } from "./operation";
 
 export class Broadcast {
@@ -10,23 +9,19 @@ export class Broadcast {
     setData: (data: any) => void;
     getData: () => any;
     onPeerDisconnected: (peerId: string) => void;
+    onOpen: (id: string) => void;
     private network: Peer.DataConnection[] = [];
     constructor(
-        private targetID: string,
         private peer: Peer
     ) {
-        this.onOpen();
+        this._onOpen();
     }
 
-    private onOpen() {
+    private _onOpen() {
         this.peer.on('open', (id) => {
             console.info('Peer ID: ' + id);
             this.onPeerConnection();
-            if (!this.targetID) {
-                updateLocationHash({ id });
-            } else {
-                this.connectToTarget(this.targetID);
-            }
+            this.onOpen(id);
         });
     }
 
@@ -36,7 +31,7 @@ export class Broadcast {
      * @param {string} targetPeerId
      * @memberof Broadcast
      */
-    private connectToTarget(targetPeerId: string, loadInitialData = true) {
+    connectToTarget(targetPeerId: string, loadInitialData = true) {
         // console.log(`connecting to ${targetPeerId} ...`);
         const conn = this.peer.connect(targetPeerId);
         conn.on('open', () => {

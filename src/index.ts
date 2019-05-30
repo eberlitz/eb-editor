@@ -31,7 +31,10 @@ const peer = new (Peer as any).default({
     debug: 1
 }) as Peer;
 
-const broadcast = new Broadcast(targetID, peer);
+const broadcast = new Broadcast(peer);
+broadcast.onOpen = (id: string) => !!targetID
+    ? broadcast.connectToTarget(targetID)
+    : updateLocationHash({ id });
 broadcast.getData = () => editor.getModel().getLinesContent().join('\n');
 broadcast.setData = (value) => editor.getModel().setValue(value);
 broadcast.onInsertText = (index: number, value: string) => contentManager.insert(index, value);
